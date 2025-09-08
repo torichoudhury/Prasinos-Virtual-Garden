@@ -11,7 +11,7 @@ import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_object_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_anchor_manager.dart';
 import 'package:plant_arvr/providers/ar_providers.dart';
-import 'package:plant_arvr/services/gemini_service.dart';
+import 'package:plant_arvr/data/local_plant_data.dart';
 import 'package:vector_math/vector_math_64.dart' as vector_math;
 import 'dart:async';
 
@@ -245,51 +245,40 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
 
     if (tappedPlant != null) {
       statusNotifier.updateStatus(
-        "Loading ${tappedPlant.plantInfo.displayName} details...",
+        "Showing ${tappedPlant.plantInfo.displayName} details...",
       );
       showPlantDetailsNotifier.show();
 
-      // Set loading state
-      plantDetailsNotifier.setPlantDetails(
-        PlantDetails(
-          name: tappedPlant.plantInfo.displayName,
-          benefits: '',
-          usage: '',
-          description: '',
-          isLoading: true,
-        ),
-      );
-
       try {
-        // Get plant details from Gemini - using a dummy API key for now
-        //const geminiApiKey = "AIzaSyCoC1J_-dYZkQYlR-DQ-IUd2xRcyCBhBFU"; // You'll need to replace this
-        final geminiService = GeminiService();
+        // Get plant details from local data
+        final localPlantData = LocalPlantData.getPlantInfo();
+        final plantDetails = localPlantData[tappedPlant.plantInfo.id];
 
-        final plantDetailsResponse = await geminiService.getPlantDetails(
-          tappedPlant.plantInfo.displayName,
-        );
+        if (plantDetails != null) {
+          plantDetailsNotifier.setPlantDetails(plantDetails);
+          statusNotifier.updateStatus(
+            "${tappedPlant.plantInfo.displayName} details loaded!",
+          );
 
-        plantDetailsNotifier.setPlantDetails(
-          PlantDetails(
-            name: tappedPlant.plantInfo.displayName,
-            benefits: plantDetailsResponse.benefits,
-            usage: plantDetailsResponse.usage,
-            description: plantDetailsResponse.description,
-            isLoading: false,
-          ),
-        );
-
-        statusNotifier.updateStatus(
-          "${tappedPlant.plantInfo.displayName} details loaded!",
-        );
-
-        Timer(const Duration(seconds: 2), () {
-          if (mounted) {
-            statusNotifier.updateStatus(
-              "Tap plants for details or surfaces to place more",
-            );
-          }
-        });
+          Timer(const Duration(seconds: 2), () {
+            if (mounted) {
+              statusNotifier.updateStatus(
+                "Tap plants for details or surfaces to place more",
+              );
+            }
+          });
+        } else {
+          // Fallback if plant data not found
+          plantDetailsNotifier.setPlantDetails(
+            PlantDetails(
+              name: tappedPlant.plantInfo.displayName,
+              benefits: "This medicinal plant has various health benefits.",
+              usage: "Can be used in traditional medicine and cooking.",
+              description: "A beneficial plant with medicinal properties.",
+              isLoading: false,
+            ),
+          );
+        }
       } catch (e) {
         print("Error loading plant details: $e");
         plantDetailsNotifier.setPlantDetails(
@@ -318,43 +307,34 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     statusNotifier.updateStatus("Loading ${plant.displayName} information...");
     showPlantDetailsNotifier.show();
 
-    // Set loading state
-    plantDetailsNotifier.setPlantDetails(
-      PlantDetails(
-        name: plant.displayName,
-        benefits: '',
-        usage: '',
-        description: '',
-        isLoading: true,
-      ),
-    );
-
     try {
-      final geminiService = GeminiService();
+      // Get plant details from local data
+      final localPlantData = LocalPlantData.getPlantInfo();
+      final plantDetails = localPlantData[plant.id];
 
-      final plantDetailsResponse = await geminiService.getPlantDetails(
-        plant.displayName,
-      );
+      if (plantDetails != null) {
+        plantDetailsNotifier.setPlantDetails(plantDetails);
+        statusNotifier.updateStatus("${plant.displayName} information loaded!");
 
-      plantDetailsNotifier.setPlantDetails(
-        PlantDetails(
-          name: plant.displayName,
-          benefits: plantDetailsResponse.benefits,
-          usage: plantDetailsResponse.usage,
-          description: plantDetailsResponse.description,
-          isLoading: false,
-        ),
-      );
-
-      statusNotifier.updateStatus("${plant.displayName} information loaded!");
-
-      Timer(const Duration(seconds: 2), () {
-        if (mounted) {
-          statusNotifier.updateStatus(
-            "Tap info buttons for plant details or surfaces to place plants",
-          );
-        }
-      });
+        Timer(const Duration(seconds: 2), () {
+          if (mounted) {
+            statusNotifier.updateStatus(
+              "Tap info buttons for plant details or surfaces to place plants",
+            );
+          }
+        });
+      } else {
+        // Fallback if plant data not found
+        plantDetailsNotifier.setPlantDetails(
+          PlantDetails(
+            name: plant.displayName,
+            benefits: "This medicinal plant has various health benefits.",
+            usage: "Can be used in traditional medicine and cooking.",
+            description: "A beneficial plant with medicinal properties.",
+            isLoading: false,
+          ),
+        );
+      }
     } catch (e) {
       print("Error loading plant information: $e");
       plantDetailsNotifier.setPlantDetails(
@@ -534,7 +514,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
                   Icon(currentPlantInfo.icon, color: Colors.white, size: 18),
                   const SizedBox(width: 8),
                   Text(
-                    "${currentPlantInfo.displayName}: $objectCount",
+                    "Plants placed: $objectCount",
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
@@ -691,38 +671,50 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
           return const SizedBox.shrink();
         }
 
-        return Container(
-          color: Colors.black.withOpacity(0.7),
-          child: Center(
-            child: Container(
-              margin: const EdgeInsets.all(20),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
+        return Positioned(
+          right: 16,
+          top: MediaQuery.of(context).padding.top + 80, // Below status overlay
+          bottom: 220, // Above plant selector
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.85,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Header with plant name and close button
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
                   ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header with close button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Row(
                     children: [
+                      const Icon(
+                        Icons.local_florist,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           plantDetails.name,
                           style: const TextStyle(
-                            fontSize: 24,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.green,
+                            color: Colors.white,
                           ),
                         ),
                       ),
@@ -734,94 +726,49 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
                               .clearDetails();
                         },
                         icon: const Icon(Icons.close),
-                        color: Colors.grey,
+                        color: Colors.white,
+                        iconSize: 20,
                       ),
                     ],
                   ),
+                ),
 
-                  const SizedBox(height: 16),
-
-                  if (plantDetails.isLoading) ...[
-                    const Center(
-                      child: Column(
-                        children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text(
-                            "Loading plant information...",
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                        ],
+                // Content area with chat-like messages
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Benefits message
+                      _buildChatMessage(
+                        "Medical Benefits",
+                        plantDetails.benefits,
+                        Icons.healing,
+                        Colors.blue,
                       ),
-                    ),
-                  ] else if (plantDetails.error != null) ...[
-                    Center(
-                      child: Column(
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            size: 48,
-                            color: Colors.red,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            "Unable to load plant information",
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.red,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            plantDetails.error!,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+
+                      const SizedBox(height: 12),
+
+                      // Usage message
+                      _buildChatMessage(
+                        "Usage & Application",
+                        plantDetails.usage,
+                        Icons.info_outline,
+                        Colors.orange,
                       ),
-                    ),
-                  ] else ...[
-                    // Content in scrollable container
-                    Flexible(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Benefits section
-                            _buildDetailSection(
-                              "Medical Benefits",
-                              plantDetails.benefits,
-                              Icons.healing,
-                            ),
 
-                            const SizedBox(height: 16),
+                      const SizedBox(height: 12),
 
-                            // Usage section
-                            _buildDetailSection(
-                              "Usage & Application",
-                              plantDetails.usage,
-                              Icons.info,
-                            ),
-
-                            const SizedBox(height: 16),
-
-                            // Description section
-                            _buildDetailSection(
-                              "Description",
-                              plantDetails.description,
-                              Icons.description,
-                            ),
-                          ],
-                        ),
+                      // Description message
+                      _buildChatMessage(
+                        "Description",
+                        plantDetails.description,
+                        Icons.description,
+                        Colors.purple,
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -829,42 +776,65 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     );
   }
 
-  Widget _buildDetailSection(String title, String content, IconData icon) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: Colors.green, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              title,
+  Widget _buildChatMessage(
+    String title,
+    String content,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Message header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+              border: Border.all(color: color.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Message content
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
+              border: Border.all(color: color.withOpacity(0.3)),
+            ),
+            child: Text(
+              content,
               style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.green,
+                fontSize: 13,
+                height: 1.4,
+                color: Colors.black87,
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
           ),
-          child: Text(
-            content,
-            style: const TextStyle(
-              fontSize: 14,
-              height: 1.4,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
