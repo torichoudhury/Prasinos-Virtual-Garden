@@ -692,7 +692,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
                 child: Container(
                   width: MediaQuery.of(context).size.width * 0.85,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Colors.black,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
@@ -836,7 +836,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: Colors.grey[800],
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(12),
                 bottomRight: Radius.circular(12),
@@ -848,7 +848,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
               style: const TextStyle(
                 fontSize: 13,
                 height: 1.4,
-                color: Colors.black87,
+                color: Colors.white,
               ),
             ),
           ),
