@@ -671,105 +671,124 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
           return const SizedBox.shrink();
         }
 
-        return Positioned(
-          right: 16,
-          top: MediaQuery.of(context).padding.top + 80, // Below status overlay
-          bottom: 220, // Above plant selector
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.85,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Header with plant name and close button
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    color: Colors.green,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.local_florist,
-                        color: Colors.white,
-                        size: 20,
+        return Positioned.fill(
+          child: Stack(
+            children: [
+              // Translucent black background
+              GestureDetector(
+                onTap: () {
+                  ref.read(showPlantDetailsProvider.notifier).hide();
+                  ref.read(plantDetailsProvider.notifier).clearDetails();
+                },
+                child: Container(color: Colors.black.withOpacity(0.6)),
+              ),
+              // Modal content
+              Positioned(
+                right: 16,
+                top:
+                    MediaQuery.of(context).padding.top +
+                    80, // Below status overlay
+                bottom: 220, // Above plant selector
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.85,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          plantDetails.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Header with plant name and close button
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
                           ),
                         ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.local_florist,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                plantDetails.name,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                ref
+                                    .read(showPlantDetailsProvider.notifier)
+                                    .hide();
+                                ref
+                                    .read(plantDetailsProvider.notifier)
+                                    .clearDetails();
+                              },
+                              icon: const Icon(Icons.close),
+                              color: Colors.white,
+                              iconSize: 20,
+                            ),
+                          ],
+                        ),
                       ),
-                      IconButton(
-                        onPressed: () {
-                          ref.read(showPlantDetailsProvider.notifier).hide();
-                          ref
-                              .read(plantDetailsProvider.notifier)
-                              .clearDetails();
-                        },
-                        icon: const Icon(Icons.close),
-                        color: Colors.white,
-                        iconSize: 20,
+
+                      // Content area with chat-like messages
+                      Expanded(
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Benefits message
+                            _buildChatMessage(
+                              "Medical Benefits",
+                              plantDetails.benefits,
+                              Icons.healing,
+                              Colors.blue,
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Usage message
+                            _buildChatMessage(
+                              "Usage & Application",
+                              plantDetails.usage,
+                              Icons.info_outline,
+                              Colors.orange,
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Description message
+                            _buildChatMessage(
+                              "Description",
+                              plantDetails.description,
+                              Icons.description,
+                              Colors.purple,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-
-                // Content area with chat-like messages
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Benefits message
-                      _buildChatMessage(
-                        "Medical Benefits",
-                        plantDetails.benefits,
-                        Icons.healing,
-                        Colors.blue,
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Usage message
-                      _buildChatMessage(
-                        "Usage & Application",
-                        plantDetails.usage,
-                        Icons.info_outline,
-                        Colors.orange,
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Description message
-                      _buildChatMessage(
-                        "Description",
-                        plantDetails.description,
-                        Icons.description,
-                        Colors.purple,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
