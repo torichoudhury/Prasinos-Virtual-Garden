@@ -14,7 +14,7 @@ import 'package:plant_arvr/providers/ar_providers.dart';
 import 'package:plant_arvr/data/local_plant_data.dart';
 import 'package:vector_math/vector_math_64.dart' as vector_math;
 import 'dart:async';
-
+import 'package:plant_arvr/widgets/ar_chatbot.dart';
 class ImprovedARTest extends ConsumerStatefulWidget {
   const ImprovedARTest({Key? key}) : super(key: key);
 
@@ -97,19 +97,28 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     print("AR View Created - Starting initialization...");
 
     try {
+      // Improved AR initialization with better settings
       await arSessionManager.onInitialize(
-        showFeaturePoints: true,
+        showFeaturePoints: false, // Reduce rendering load
         showPlanes: true,
         showWorldOrigin: false,
         handlePans: false,
         handleRotation: false,
         handleTaps: true,
+        // Add these parameters if available
+        // maxImages: 2, // Limit buffer size
+        // enableAutoFocus: true,
       );
 
       await arObjectManager.onInitialize();
+
+      // Add delay to ensure proper initialization
+      await Future.delayed(const Duration(seconds: 3));
+
       arSessionManager.onPlaneOrPointTap = onPlaneTap;
       arObjectManager.onNodeTap = onNodeTap;
 
+      // Additional delay before marking as ready
       await Future.delayed(const Duration(seconds: 2));
 
       arStateNotifier.setARReady(true);
@@ -119,7 +128,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
       final plants = ref.read(plantsProvider);
       final plantInfo = plants.firstWhere((p) => p.id == selectedPlant);
       statusNotifier.updateStatus(
-        "AR Ready! Tap to place ${plantInfo.displayName} or use info buttons for plant details",
+        "AR Ready! Move device slowly to scan surfaces, then tap to place ${plantInfo.displayName}",
       );
 
       print("AR initialization completed successfully");
@@ -935,6 +944,8 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
 
             // Object counter
             _buildObjectCounter(),
+
+            const ARChatbot(),
 
             // Plant selector
             _buildPlantSelector(),

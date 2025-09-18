@@ -14,19 +14,40 @@ class PlantDetailsResponse {
   });
 }
 
+class ChatMessage {
+  final String text;
+  final bool isUser;
+  final DateTime timestamp;
+
+  ChatMessage({
+    required this.text,
+    required this.isUser,
+    required this.timestamp,
+  });
+}
+
 class GeminiService {
   static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
   late final String _apiKey;
+  late final bool _isConfigured;
 
   GeminiService() {
     _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-    if (_apiKey.isEmpty) {
-      throw Exception('GEMINI_API_KEY not found in .env file');
+    _isConfigured = _apiKey.isNotEmpty;
+    
+    if (!_isConfigured) {
+      print('Warning: GEMINI_API_KEY not found in .env file. Plant details feature will be disabled.');
     }
   }
 
+  bool get isConfigured => _isConfigured;
+
   Future<String> getMedicalBenefits(String plantName) async {
+    if (!_isConfigured) {
+      return 'Gemini AI service is not configured. Please add your API key to the .env file to enable plant details.';
+    }
+    
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$_apiKey'),
@@ -58,6 +79,14 @@ class GeminiService {
   }
 
   Future<PlantDetailsResponse> getPlantDetails(String plantName) async {
+    if (!_isConfigured) {
+      return PlantDetailsResponse(
+        benefits: 'Gemini AI service is not configured.',
+        usage: 'Please add your API key to the .env file to enable detailed plant information.',
+        description: 'The plant details feature requires a Gemini API key.',
+      );
+    }
+    
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$_apiKey'),
@@ -172,5 +201,52 @@ class GeminiService {
     }
 
     return result;
+  }
+
+  // Chatbot functionality for AR Virtual Garden
+  Future<String> getChatResponse(String userMessage, List<ChatMessage> conversationHistory, {List<String>? placedPlants}) async {
+    if (!_isConfigured) {
+      return 'I apologize, but the chat feature is not available because the Gemini API key is not configured. Please add your API key to the .env file to enable this feature.';
+    }
+    
+    try {
+      // Simple, working prompt
+      String prompt = 'You are a helpful garden assistant. Answer this question about plants or gardening: $userMessage';
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl?key=$_apiKey'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {
+                  'text': prompt,
+                },
+              ],
+            },
+          ],
+          'generationConfig': {
+            'temperature': 0.7,
+            'maxOutputTokens': 200,
+          },
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['candidates'] != null && data['candidates'].isNotEmpty) {
+          return data['candidates'][0]['content']['parts'][0]['text']?.trim() ?? 
+                 'I apologize, but I couldn\'t generate a proper response. Please try asking again!';
+        }
+        return 'I received an empty response. Please try rephrasing your question!';
+      } else {
+        return 'I\'m having trouble connecting to the AI service right now. Please try again!';
+      }
+      
+    } catch (e) {
+      print('Error getting chat response: $e');
+      return 'Sorry, I encountered an error. Please try again!';
+    }
   }
 }
