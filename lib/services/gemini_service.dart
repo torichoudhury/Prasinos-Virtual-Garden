@@ -35,9 +35,11 @@ class GeminiService {
   GeminiService() {
     _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
     _isConfigured = _apiKey.isNotEmpty;
-    
+
     if (!_isConfigured) {
-      print('Warning: GEMINI_API_KEY not found in .env file. Plant details feature will be disabled.');
+      print(
+        'Warning: GEMINI_API_KEY not found in .env file. Plant details feature will be disabled.',
+      );
     }
   }
 
@@ -47,7 +49,7 @@ class GeminiService {
     if (!_isConfigured) {
       return 'Gemini AI service is not configured. Please add your API key to the .env file to enable plant details.';
     }
-    
+
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$_apiKey'),
@@ -69,7 +71,9 @@ class GeminiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['candidates'][0]['content']['parts'][0]['text'] as String;
+        String responseText =
+            data['candidates'][0]['content']['parts'][0]['text'] as String;
+        return _formatContent(responseText);
       } else {
         throw Exception('Failed to get medical benefits');
       }
@@ -82,11 +86,12 @@ class GeminiService {
     if (!_isConfigured) {
       return PlantDetailsResponse(
         benefits: 'Gemini AI service is not configured.',
-        usage: 'Please add your API key to the .env file to enable detailed plant information.',
+        usage:
+            'Please add your API key to the .env file to enable detailed plant information.',
         description: 'The plant details feature requires a Gemini API key.',
       );
     }
-    
+
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$_apiKey'),
@@ -165,7 +170,9 @@ class GeminiService {
           }
         } else if (trimmedLine.toUpperCase().startsWith('USAGE:')) {
           if (currentSection.isNotEmpty) {
-            result[currentSection] = currentContent.toString().trim();
+            result[currentSection] = _formatContent(
+              currentContent.toString().trim(),
+            );
           }
           currentSection = 'usage';
           currentContent.clear();
@@ -176,7 +183,9 @@ class GeminiService {
           }
         } else if (trimmedLine.toUpperCase().startsWith('DESCRIPTION:')) {
           if (currentSection.isNotEmpty) {
-            result[currentSection] = currentContent.toString().trim();
+            result[currentSection] = _formatContent(
+              currentContent.toString().trim(),
+            );
           }
           currentSection = 'description';
           currentContent.clear();
@@ -192,58 +201,77 @@ class GeminiService {
 
       // Don't forget the last section
       if (currentSection.isNotEmpty) {
-        result[currentSection] = currentContent.toString().trim();
+        result[currentSection] = _formatContent(
+          currentContent.toString().trim(),
+        );
       }
     } catch (e) {
       print('Error parsing Gemini response: $e');
       // Fallback: use the entire response as description
-      result['description'] = response;
+      result['description'] = _formatContent(response);
     }
 
     return result;
   }
 
+  /// Formats content to approximately 70 words and removes asterisks
+  String _formatContent(String content) {
+    // Remove asterisks
+    var formatted = content.replaceAll('*', '');
+
+    // Limit to approximately 70 words
+    var words = formatted.split(' ');
+    if (words.length > 70) {
+      formatted = words.take(70).join(' ') + '...';
+    }
+
+    return formatted;
+  }
+
   // Chatbot functionality for AR Virtual Garden
-  Future<String> getChatResponse(String userMessage, List<ChatMessage> conversationHistory, {List<String>? placedPlants}) async {
+  Future<String> getChatResponse(
+    String userMessage,
+    List<ChatMessage> conversationHistory, {
+    List<String>? placedPlants,
+  }) async {
     if (!_isConfigured) {
       return 'I apologize, but the chat feature is not available because the Gemini API key is not configured. Please add your API key to the .env file to enable this feature.';
     }
-    
+
     try {
       // Simple, working prompt
-      String prompt = 'You are a helpful garden assistant. Answer this question about plants or gardening: $userMessage';
+      String prompt =
+          'You are a helpful garden assistant. Answer this question about plants or gardening: $userMessage';
 
-      final response = await http.post(
-        Uri.parse('$_baseUrl?key=$_apiKey'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl?key=$_apiKey'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'contents': [
                 {
-                  'text': prompt,
+                  'parts': [
+                    {'text': prompt},
+                  ],
                 },
               ],
-            },
-          ],
-          'generationConfig': {
-            'temperature': 0.7,
-            'maxOutputTokens': 200,
-          },
-        }),
-      ).timeout(const Duration(seconds: 10));
+              'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 200},
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['candidates'] != null && data['candidates'].isNotEmpty) {
-          return data['candidates'][0]['content']['parts'][0]['text']?.trim() ?? 
-                 'I apologize, but I couldn\'t generate a proper response. Please try asking again!';
+          String responseText =
+              data['candidates'][0]['content']['parts'][0]['text']?.trim() ??
+              'I apologize, but I couldn\'t generate a proper response. Please try asking again!';
+          return _formatContent(responseText);
         }
         return 'I received an empty response. Please try rephrasing your question!';
       } else {
         return 'I\'m having trouble connecting to the AI service right now. Please try again!';
       }
-      
     } catch (e) {
       print('Error getting chat response: $e');
       return 'Sorry, I encountered an error. Please try again!';
