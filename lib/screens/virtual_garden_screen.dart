@@ -11,6 +11,7 @@ import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_object_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_anchor_manager.dart';
 import 'package:plant_arvr/providers/ar_providers.dart';
+import 'package:plant_arvr/services/asset_cache_service.dart';
 import 'package:plant_arvr/data/local_plant_data.dart';
 import 'package:vector_math/vector_math_64.dart' as vector_math;
 import 'dart:async';
@@ -29,12 +30,24 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Start the status timer
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Start AR status cycling
       final arStateNotifier = ref.read(arStateProvider.notifier);
       final statusNotifier = ref.read(statusProvider.notifier);
       arStateNotifier.startStatusTimer(statusNotifier);
+
+      // Kick off background asset downloads so local files are ready
+      // before the user first taps to place a plant.
+      _preloadAssets();
     });
+  }
+
+  Future<void> _preloadAssets() async {
+    final remoteUrls = ref.read(plantRemoteUrlsProvider);
+    final cacheNotifier = ref.read(assetCacheProvider.notifier);
+    // Check disk, then download anything missing in background.
+    await cacheNotifier.initialise(remoteUrls);
+    cacheNotifier.downloadAll(remoteUrls);
   }
 
   @override
@@ -48,24 +61,18 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
   Future<void> _cleanupAR() async {
     final arState = ref.read(arStateProvider);
     final placedAnchors = ref.read(placedAnchorsProvider);
-    final objectCountNotifier = ref.read(objectCountProvider.notifier);
-    final placedAnchorsNotifier = ref.read(placedAnchorsProvider.notifier);
     final placedPlantsNotifier = ref.read(placedPlantsProvider.notifier);
     final plantDetailsNotifier = ref.read(plantDetailsProvider.notifier);
-    final showPlantDetailsNotifier = ref.read(
-      showPlantDetailsProvider.notifier,
-    );
+    final showPlantDetailsNotifier = ref.read(showPlantDetailsProvider.notifier);
 
     if (arState.arObjectManager != null && arState.arAnchorManager != null) {
       for (final anchor in placedAnchors) {
         await arState.arAnchorManager!.removeAnchor(anchor);
       }
     }
-    placedAnchorsNotifier.clearAnchors();
-    placedPlantsNotifier.clearPlacedPlants();
+    placedPlantsNotifier.clearAll();
     plantDetailsNotifier.clearDetails();
     showPlantDetailsNotifier.hide();
-    objectCountNotifier.reset();
     arState.arSessionManager?.dispose();
   }
 
@@ -112,14 +119,11 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
 
       await arObjectManager.onInitialize();
 
-      // Add delay to ensure proper initialization
-      await Future.delayed(const Duration(seconds: 3));
+      // Single short delay for sensor warmup — 1 s is sufficient
+      await Future.delayed(const Duration(milliseconds: 800));
 
       arSessionManager.onPlaneOrPointTap = onPlaneTap;
       arObjectManager.onNodeTap = onNodeTap;
-
-      // Additional delay before marking as ready
-      await Future.delayed(const Duration(seconds: 2));
 
       arStateNotifier.setARReady(true);
       arStateNotifier.setInitializing(false);
@@ -144,9 +148,6 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     final statusNotifier = ref.read(statusProvider.notifier);
     final selectedPlant = ref.read(selectedPlantProvider);
     final plants = ref.read(plantsProvider);
-    final objectCount = ref.read(objectCountProvider);
-    final objectCountNotifier = ref.read(objectCountProvider.notifier);
-    final placedAnchorsNotifier = ref.read(placedAnchorsProvider.notifier);
     final placedPlantsNotifier = ref.read(placedPlantsProvider.notifier);
 
     if (!arState.isARReady) {
@@ -177,12 +178,11 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
 
       if (didAddAnchor == true) {
         final plantInfo = plants.firstWhere((p) => p.id == selectedPlant);
-        final nodeName = "${selectedPlant}_$objectCount";
+        final nodeName = '${selectedPlant}_${ref.read(objectCountProvider)}';
 
         var node = await _loadModel(
-          plantInfo.modelUrl,
+          plantInfo,
           nodeName,
-          plantInfo.scale,
         );
 
         bool? didAddNode = await arState.arObjectManager!.addNode(
@@ -193,7 +193,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
         if (didAddNode == true) {
           // Track the placed plant
           final placedPlant = PlacedPlant(
-            id: "${selectedPlant}_$objectCount",
+            id: '${selectedPlant}_${ref.read(objectCountProvider)}',
             plantType: selectedPlant,
             nodeName: nodeName,
             anchor: anchor,
@@ -205,9 +205,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
             plantInfo: plantInfo,
           );
 
-          placedAnchorsNotifier.addAnchor(anchor);
           placedPlantsNotifier.addPlacedPlant(placedPlant);
-          objectCountNotifier.increment();
           final newCount = ref.read(objectCountProvider);
           statusNotifier.updateStatus(
             "Success! ${plantInfo.displayName} #$newCount placed. Tap on plants to see details.",
@@ -250,7 +248,7 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     final statusNotifier = ref.read(statusProvider.notifier);
 
     // Find the tapped plant
-    final tappedPlant = placedPlantsNotifier.findPlantByNodeName(nodeName);
+    final tappedPlant = placedPlantsNotifier.findByNodeName(nodeName);
 
     if (tappedPlant != null) {
       statusNotifier.updateStatus(
@@ -360,46 +358,62 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
     }
   }
 
-  Future<ARNode?> _loadModel(
-    String modelUrl,
-    String nodeName,
-    vector_math.Vector3 scale,
-  ) async {
+  /// Resolves the best URI for a plant model:
+  /// 1. Local cached file on disk  → NodeType.localGLTF2  (instant)
+  /// 2. Remote GitHub URL          → NodeType.webGLB      (fallback)
+  /// An in-memory ARNode template cache avoids redundant object creation.
+  Future<ARNode?> _loadModel(PlantInfo plantInfo, String nodeName) async {
     final modelCacheNotifier = ref.read(modelCacheProvider.notifier);
-    final modelCache = ref.read(modelCacheProvider);
     final statusNotifier = ref.read(statusProvider.notifier);
 
     try {
-      // Check if model is cached
-      if (modelCache.containsKey(modelUrl)) {
-        print("Using cached model for $nodeName");
-        final cachedNode = modelCache[modelUrl]!;
+      // Prefer local cached file for near-instant placement.
+      // IMPORTANT: ar_flutter_plugin_2's NodeType.localGLTF2 routes through
+      // Android AssetManager (flutter_assets/...) which only works for bundled
+      // assets. For absolute file-system paths we use NodeType.webGLB with a
+      // file:// URI — Filament resolves these directly from the file system.
+      final localPath =
+          ref.read(assetCacheProvider.notifier).localPathFor(plantInfo.id);
+      final useLocal = localPath != null;
+      final resolvedUri =
+          useLocal ? 'file://$localPath' : plantInfo.remoteModelUrl;
+      const nodeType = NodeType.webGLB;
+
+      // Re-use in-memory template if available
+      if (modelCacheNotifier.isCached(resolvedUri)) {
+        final cached = modelCacheNotifier.getCachedModel(resolvedUri)!;
         return ARNode(
-          type: cachedNode.type,
-          uri: cachedNode.uri,
-          scale: scale,
+          type: cached.type,
+          uri: cached.uri,
+          scale: plantInfo.scale,
           position: vector_math.Vector3(0.0, 0.0, 0.0),
           rotation: vector_math.Vector4(0.0, 1.0, 0.0, 0.0),
           name: nodeName,
         );
       }
 
-      print("Loading model from URL: $modelUrl");
-      var node = ARNode(
-        type: NodeType.webGLB,
-        uri: modelUrl,
-        scale: scale,
+      if (useLocal) {
+        print('Placing ${plantInfo.id} from local cache: $resolvedUri');
+      } else {
+        print('Local file not ready – loading ${plantInfo.id} from remote URL');
+        statusNotifier.updateStatus(
+            'Downloading ${plantInfo.displayName} model (first use)…');
+      }
+
+      final node = ARNode(
+        type: nodeType,
+        uri: resolvedUri,
+        scale: plantInfo.scale,
         position: vector_math.Vector3(0.0, 0.0, 0.0),
         rotation: vector_math.Vector4(0.0, 1.0, 0.0, 0.0),
         name: nodeName,
       );
 
-      modelCacheNotifier.cacheModel(modelUrl, node);
-      print("Model loaded and cached successfully: $nodeName");
+      modelCacheNotifier.cacheModel(resolvedUri, node);
       return node;
     } catch (e) {
-      print("Error loading model: $e");
-      statusNotifier.updateStatus("Error loading model: $e");
+      print('Error loading model: $e');
+      statusNotifier.updateStatus('Error loading model: $e');
       return null;
     }
   }
@@ -887,41 +901,28 @@ class _ImprovedARTestState extends ConsumerState<ImprovedARTest>
                 icon: const Icon(Icons.refresh, size: 20),
                 onPressed: () async {
                   final arState = ref.read(arStateProvider);
-                  final objectCountNotifier = ref.read(
-                    objectCountProvider.notifier,
-                  );
-                  final placedAnchorsNotifier = ref.read(
-                    placedAnchorsProvider.notifier,
-                  );
-                  final placedPlantsNotifier = ref.read(
-                    placedPlantsProvider.notifier,
-                  );
-                  final plantDetailsNotifier = ref.read(
-                    plantDetailsProvider.notifier,
-                  );
-                  final showPlantDetailsNotifier = ref.read(
-                    showPlantDetailsProvider.notifier,
-                  );
+                  final placedPlantsNotifier =
+                      ref.read(placedPlantsProvider.notifier);
+                  final plantDetailsNotifier =
+                      ref.read(plantDetailsProvider.notifier);
+                  final showPlantDetailsNotifier =
+                      ref.read(showPlantDetailsProvider.notifier);
                   final statusNotifier = ref.read(statusProvider.notifier);
 
                   try {
-                    for (ARPlaneAnchor anchor in placedAnchors) {
+                    for (final anchor in placedAnchors) {
                       await arState.arAnchorManager?.removeAnchor(anchor);
                     }
-                    placedAnchorsNotifier.clearAnchors();
-                    placedPlantsNotifier.clearPlacedPlants();
+                    placedPlantsNotifier.clearAll();
                     plantDetailsNotifier.clearDetails();
                     showPlantDetailsNotifier.hide();
-                    objectCountNotifier.reset();
                     statusNotifier.updateStatus(
-                      "All plants cleared - tap surfaces to place new ones",
+                      'All plants cleared – tap surfaces to place new ones',
                     );
-                    print("Successfully cleared all objects");
                   } catch (e) {
-                    print("Error clearing objects: $e");
+                    print('Error clearing objects: $e');
                     statusNotifier.updateStatus(
-                      "Error clearing objects - try restarting",
-                    );
+                        'Error clearing objects – try restarting');
                   }
                 },
                 tooltip: 'Clear all plants',
