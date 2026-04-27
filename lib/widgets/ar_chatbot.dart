@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:plant_arvr/services/gemini_service.dart';
+import 'package:plant_arvr/services/offline_chat_service.dart';
 import 'package:plant_arvr/providers/ar_providers.dart';
 
 // Provider for chatbot state
@@ -131,75 +133,18 @@ class ChatbotNotifier extends StateNotifier<ChatbotState> {
 
   Future<bool> _checkInternetConnection() async {
     try {
-      // Use a quick HTTP request to check connectivity
-      final response = await http.get(
+      // Any completed response (including redirects) means we have connectivity
+      await http.get(
         Uri.parse('https://www.google.com'),
       ).timeout(const Duration(seconds: 5));
-      return response.statusCode == 200;
+      return true;
     } catch (e) {
       return false;
     }
   }
 
   String _getOfflineResponse(String message, List<String>? placedPlants) {
-    final lowerMessage = message.toLowerCase();
-    
-    // Plant care questions
-    if (lowerMessage.contains('care') || lowerMessage.contains('water') || lowerMessage.contains('grow')) {
-      return "🌿 For basic plant care:\n• Water when soil feels dry\n• Provide adequate sunlight\n• Use well-draining soil\n• Remove dead leaves regularly\n\nFor specific plant care, I'd recommend consulting detailed guides online!";
-    }
-    
-    // AR help
-    if (lowerMessage.contains('ar') || lowerMessage.contains('place') || lowerMessage.contains('camera')) {
-      return "📱 AR Tips:\n• Point your camera at flat, well-lit surfaces\n• Move slowly for better tracking\n• Tap on detected planes to place plants\n• Use good lighting for best results\n• Clear the area of clutter for better AR detection";
-    }
-    
-    // Plant information
-    if (lowerMessage.contains('basil')) {
-      return "🌿 Basil is a popular culinary herb. It prefers warm, sunny conditions and regular watering. Great for cooking and has natural pest-repelling properties!";
-    }
-    
-    if (lowerMessage.contains('neem')) {
-      return "🌿 Neem is known for its medicinal properties. It's drought-resistant and has natural pesticide qualities. Often used in traditional medicine and organic farming.";
-    }
-    
-    if (lowerMessage.contains('rosemary')) {
-      return "🌿 Rosemary is a hardy, aromatic herb. It loves sunny, dry conditions and doesn't need much water. Great for cooking and has antioxidant properties!";
-    }
-    
-    if (lowerMessage.contains('eucalyptus')) {
-      return "🌿 Eucalyptus is known for its distinctive scent and medicinal uses. It grows quickly and prefers well-drained soil. Often used for respiratory health.";
-    }
-    
-    if (lowerMessage.contains('aloe')) {
-      return "🌿 Aloe Vera is a succulent with healing properties. It needs minimal water and bright, indirect light. The gel inside leaves is great for skin care!";
-    }
-    
-    // Garden design
-    if (lowerMessage.contains('design') || lowerMessage.contains('layout') || lowerMessage.contains('arrange')) {
-      return "🏡 Garden Design Tips:\n• Group plants with similar water needs\n• Consider plant heights and spacing\n• Mix textures and colors for visual appeal\n• Plan for seasonal changes\n• Leave space for growth";
-    }
-    
-    // Current garden status
-    if (placedPlants != null && placedPlants.isNotEmpty) {
-      if (lowerMessage.contains('garden') || lowerMessage.contains('plant')) {
-        return "🌱 Your current AR garden has: ${placedPlants.join(', ')}. These are great choices! Each plant has unique care requirements and benefits.";
-      }
-    } else {
-      if (lowerMessage.contains('garden') || lowerMessage.contains('start')) {
-        return "🌱 You haven't placed any plants yet! Start by pointing your camera at a flat surface and tap to place your first plant. I'd recommend starting with basil or aloe vera - they're great for beginners!";
-      }
-    }
-    
-    // Default responses
-    final defaultResponses = [
-      "🌱 I'm here to help with your AR garden! You can ask me about plant care, AR features, or garden design tips.",
-      "🌿 Try asking me about specific plants like basil, neem, rosemary, eucalyptus, or aloe vera!",
-      "📱 Need help with the AR features? I can guide you through placing and managing your virtual plants.",
-      "🏡 Interested in garden design? I can share tips on arranging your plants for the best results!",
-    ];
-    
-    return defaultResponses[DateTime.now().millisecond % defaultResponses.length];
+    return OfflineChatService.respond(message, placedPlants);
   }
 
   void clearChat() {
@@ -535,13 +480,49 @@ class _ARChatbotState extends ConsumerState<ARChatbot>
                     : Colors.grey[200],
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: message.isUser ? Colors.white : Colors.black87,
-                  fontSize: 14,
-                ),
-              ),
+              child: message.isUser
+                  ? Text(
+                      message.text,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    )
+                  : MarkdownBody(
+                      data: message.text,
+                      fitContent: false,
+                      softLineBreak: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(color: Colors.black87, fontSize: 14),
+                        strong: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        listBullet: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 14,
+                        ),
+                        tableBody: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 13,
+                        ),
+                        tableHead: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        blockquote: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        code: const TextStyle(
+                          fontSize: 13,
+                          backgroundColor: Color(0xFFEEEEEE),
+                        ),
+                      ),
+                    ),
             ),
           ),
           if (message.isUser) ...[

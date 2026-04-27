@@ -28,7 +28,7 @@ class ChatMessage {
 
 class GeminiService {
   static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
   late final String _apiKey;
   late final bool _isConfigured;
 
@@ -239,9 +239,10 @@ class GeminiService {
     }
 
     try {
-      // Simple, working prompt
       String prompt =
-          'You are a helpful garden assistant. Answer this question about plants or gardening: $userMessage';
+          'You are a helpful AR garden assistant. The user is exploring medicinal plants (Neem, Tulsi, Rosemary, Eucalyptus, Aloe Vera) in an AR app. '
+          'Answer concisely and use markdown formatting (bold, bullet points) where helpful. '
+          'Question: $userMessage';
 
       final response = await http
           .post(
@@ -255,18 +256,19 @@ class GeminiService {
                   ],
                 },
               ],
-              'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 200},
+              'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 450},
             }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['candidates'] != null && data['candidates'].isNotEmpty) {
+          // Return raw text — markdown is rendered by the chat bubble widget
           String responseText =
               data['candidates'][0]['content']['parts'][0]['text']?.trim() ??
               'I apologize, but I couldn\'t generate a proper response. Please try asking again!';
-          return _formatContent(responseText);
+          return responseText;
         }
         return 'I received an empty response. Please try rephrasing your question!';
       } else {
