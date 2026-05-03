@@ -1,4 +1,4 @@
-# Prasinos Virtual Garden
+# Prasinos 
 
 An Augmented Reality mobile app built with Flutter that lets you place, explore, and learn about medicinal plants in your real-world environment. Powered by Google Gemini 2.5 Flash for conversational plant knowledge, with a full offline fallback.
 
